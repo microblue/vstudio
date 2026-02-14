@@ -7,7 +7,7 @@ AI 驱动的电影短剧创作平台（Web），完整的 AI 短剧制作 pipeli
 `/home/dz/vstudio`
 
 ## 核心文件
-- `doc/` — 功能规格说明书（6 份文档）
+- `doc/` — 功能规格说明书（7 份文档）+ LLM prompt 模板（5 个）
 - `doc/01-product-overview.md` — 产品概述
 - `doc/02-workflow-design.md` — 工作流设计
 - `doc/03-feature-spec.md` — 功能规格

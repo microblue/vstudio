@@ -90,15 +90,16 @@ CREATE POLICY projects_owner ON projects
 ```sql
 CREATE TABLE episodes (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   episode_number INTEGER NOT NULL,   -- ep001 → 1
   title         VARCHAR(255),
   status        VARCHAR(50) DEFAULT 'draft',
   -- 状态: draft, script_ready, assets_ready, shots_ready,
   --       keyframes_ready, videos_ready, audio_ready,
   --       composing, final_ready, exported
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW(),
+  meta          JSONB DEFAULT '{}',
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE(project_id, episode_number)
 );
 ```
@@ -108,19 +109,20 @@ CREATE TABLE episodes (
 ```sql
 CREATE TABLE scripts (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  episode_id    UUID UNIQUE REFERENCES episodes(id) ON DELETE CASCADE,
+  episode_id    UUID UNIQUE NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
   content       TEXT NOT NULL,         -- Markdown 格式的剧本内容
   version       INTEGER DEFAULT 1,
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW()
+  meta          JSONB DEFAULT '{}',
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE script_versions (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  script_id     UUID REFERENCES scripts(id) ON DELETE CASCADE,
+  script_id     UUID NOT NULL REFERENCES scripts(id) ON DELETE CASCADE,
   version       INTEGER NOT NULL,
   content       TEXT NOT NULL,
-  created_at    TIMESTAMP DEFAULT NOW()
+  created_at    TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -129,7 +131,7 @@ CREATE TABLE script_versions (
 ```sql
 CREATE TABLE characters (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   asset_id      VARCHAR(100) NOT NULL, -- 英文ID: "hero_john"
   zh_name       VARCHAR(100),
   en_name       VARCHAR(100),
@@ -140,10 +142,10 @@ CREATE TABLE characters (
   personality   TEXT,                  -- 性格描述
   visual_prompts TEXT[],              -- 补充生成提示词
   color_palette  TEXT[],              -- 代表色
-  reference_image VARCHAR(500),       -- 主参考图URL
+  reference_image VARCHAR(500),       -- 主参考图 Storage 路径
   metadata      JSONB DEFAULT '{}',   -- 扩展字段
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW(),
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE(project_id, asset_id)
 );
 ```
@@ -153,7 +155,7 @@ CREATE TABLE characters (
 ```sql
 CREATE TABLE locations (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   asset_id      VARCHAR(100) NOT NULL,
   zh_name       VARCHAR(200),
   en_name       VARCHAR(200),
@@ -166,8 +168,8 @@ CREATE TABLE locations (
   era           VARCHAR(100),
   reference_image VARCHAR(500),
   metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW(),
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE(project_id, asset_id)
 );
 ```
@@ -177,7 +179,7 @@ CREATE TABLE locations (
 ```sql
 CREATE TABLE props (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   asset_id      VARCHAR(100) NOT NULL,
   zh_name       VARCHAR(200),
   en_name       VARCHAR(200),
@@ -185,8 +187,8 @@ CREATE TABLE props (
   visual_prompts TEXT[],
   reference_image VARCHAR(500),
   metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW(),
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE(project_id, asset_id)
 );
 ```
@@ -196,7 +198,7 @@ CREATE TABLE props (
 ```sql
 CREATE TABLE shots (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  episode_id    UUID REFERENCES episodes(id) ON DELETE CASCADE,
+  episode_id    UUID NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
   shot_id       VARCHAR(20) NOT NULL,  -- "S01", "S02"
   scene         VARCHAR(20),           -- "1-1"
   sort_order    INTEGER NOT NULL,      -- 排序序号
@@ -218,8 +220,8 @@ CREATE TABLE shots (
   trim_end      FLOAT,
   notes         TEXT,
   metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW(),
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE(episode_id, shot_id)
 );
 ```
@@ -229,14 +231,14 @@ CREATE TABLE shots (
 ```sql
 CREATE TABLE dialogues (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shot_id       UUID REFERENCES shots(id) ON DELETE CASCADE,
+  shot_id       UUID NOT NULL REFERENCES shots(id) ON DELETE CASCADE,
   sort_order    INTEGER NOT NULL,
   character_name VARCHAR(100),         -- 说话角色
   text          TEXT NOT NULL,         -- 台词文本
   emotion       VARCHAR(100),
   speed         FLOAT DEFAULT 1.0,
-  audio_clip_id UUID,                 -- → audio_clips.id (TTS生成的音频)
-  created_at    TIMESTAMP DEFAULT NOW()
+  audio_clip_id UUID,                  -- → audio_clips.id (TTS生成的音频，FK 在 audio_clips 表创建后 ALTER TABLE 添加)
+  created_at    TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -255,8 +257,8 @@ CREATE TABLE keyframes (
   selected_candidate INTEGER,          -- 选中的候选图索引
   status        VARCHAR(20) DEFAULT 'pending', -- pending, generating, done, failed
   metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW(),
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE(shot_id, keyframe_id)
 );
 ```
@@ -272,7 +274,7 @@ CREATE TABLE keyframe_candidates (
   seed          BIGINT,
   is_selected   BOOLEAN DEFAULT FALSE,
   metadata      JSONB DEFAULT '{}',    -- denoise, steps 等参数
-  created_at    TIMESTAMP DEFAULT NOW()
+  created_at    TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -289,7 +291,7 @@ CREATE TABLE shot_videos (
   is_selected   BOOLEAN DEFAULT FALSE,
   status        VARCHAR(20) DEFAULT 'pending',
   metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMP DEFAULT NOW()
+  created_at    TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -298,16 +300,20 @@ CREATE TABLE shot_videos (
 ```sql
 CREATE TABLE audio_clips (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  episode_id    UUID REFERENCES episodes(id) ON DELETE CASCADE,
+  episode_id    UUID NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
   type          VARCHAR(20) NOT NULL,  -- "dialogue", "sfx", "bgm"
-  shot_id       VARCHAR(20),           -- 关联镜头
-  file_path     VARCHAR(500) NOT NULL,
+  shot_id       UUID REFERENCES shots(id) ON DELETE SET NULL,  -- 关联镜头
+  file_path     VARCHAR(500) NOT NULL, -- Storage 路径
   duration_s    FLOAT,
   provider      VARCHAR(50),           -- "fish_audio", "edge_tts"
   voice_id      VARCHAR(100),
   metadata      JSONB DEFAULT '{}',
-  created_at    TIMESTAMP DEFAULT NOW()
+  created_at    TIMESTAMPTZ DEFAULT now()
 );
+
+-- 添加 dialogues → audio_clips 外键（因 audio_clips 在 dialogues 之后创建）
+ALTER TABLE dialogues ADD CONSTRAINT fk_dialogues_audio_clip
+  FOREIGN KEY (audio_clip_id) REFERENCES audio_clips(id) ON DELETE SET NULL;
 ```
 
 ### 2.13 VoiceProfile（角色音色配置）
@@ -315,7 +321,7 @@ CREATE TABLE audio_clips (
 ```sql
 CREATE TABLE voice_profiles (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   character_asset_id VARCHAR(100) NOT NULL, -- → characters.asset_id
   provider      VARCHAR(50) NOT NULL,  -- "fish_audio", "edge_tts"
   voice_id      VARCHAR(200),          -- 音色ID或名称
@@ -331,7 +337,7 @@ CREATE TABLE voice_profiles (
 ```sql
 CREATE TABLE tasks (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   episode_id    UUID REFERENCES episodes(id) ON DELETE SET NULL,
   type          VARCHAR(50) NOT NULL,
   -- 类型: generate_keyframe, generate_video, synthesize_voice,

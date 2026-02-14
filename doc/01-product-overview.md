@@ -58,9 +58,9 @@ VStudio 是一个 **AI 驱动的电影短剧创作平台**（Web），将 AI 短
 ## 5. 产品形态
 
 - **Web 应用**（SPA），浏览器端操作
-- **后端服务** 编排 AI 任务（ComfyUI、LLM、TTS 等）
-- **异步任务系统** 处理长时间的生成任务
-- **文件存储** 管理生成的图片、视频、音频素材
+- **Supabase Edge Functions** 代理所有 AI API 调用（Replicate/fal.ai、Anthropic、Fish Audio）
+- **异步任务系统** 通过第三方 API webhook 回调 + Supabase Realtime 推送
+- **Supabase Storage** 管理生成的图片、视频、音频素材
 
 ## 6. 竞品参考
 
@@ -78,9 +78,10 @@ VStudio 是一个 **AI 驱动的电影短剧创作平台**（Web），将 AI 短
 ✅ **包含：**
 - 单用户模式（暂不做多用户协作）
 - 完整的剧本→成片 pipeline
-- 本地 ComfyUI 作为图片/视频生成后端
+- 第三方 AI API 作为图片/视频生成后端（Replicate/fal.ai）
 - LLM API（Claude/OpenAI）用于剧本解析和分镜生成
 - TTS API（Fish Audio / Edge TTS）用于配音
+- 自建 FFmpeg HTTP 服务用于视频合成
 - 基本的项目/剧集管理
 - 资产库（角色、场景、道具）管理
 - 镜头编辑器（可视化编辑 shots.json）

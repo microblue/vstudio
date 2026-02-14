@@ -446,11 +446,13 @@ data: {"type": "done", "draft_id": "uuid", "token_usage": {"input": 800, "output
 - `reference_image` — 主参考图（选择或上传）
 
 **数据操作（前端直连 Supabase）：**
-- `supabase.from('assets').select().eq('project_id', id).eq('type', type)` — 资产列表
-- `supabase.from('assets').insert()` — 创建资产
-- `supabase.from('assets').update().eq('id', assetId)` — 更新资产
-- `supabase.from('assets').delete().eq('id', assetId)` — 删除资产
-- `supabase.storage.from('assets').upload()` — 上传自定义参考图
+- `supabase.from('characters').select().eq('project_id', id)` — 角色列表
+- `supabase.from('locations').select().eq('project_id', id)` — 场景列表
+- `supabase.from('props').select().eq('project_id', id)` — 道具列表
+- `supabase.from('characters').insert()` / `.update()` / `.delete()` — 角色 CRUD
+- `supabase.from('locations').insert()` / `.update()` / `.delete()` — 场景 CRUD
+- `supabase.from('props').insert()` / `.update()` / `.delete()` — 道具 CRUD
+- `supabase.storage.from('media').upload()` — 上传自定义参考图
 
 **AI 操作（通过 Edge Function）：**
 - `Edge Function: llm-proxy` — AI 从剧本提取资产（streaming）
@@ -635,9 +637,9 @@ data: {"type": "done", "draft_id": "uuid", "token_usage": {"input": 800, "output
 ```
 
 **数据操作（前端直连 Supabase）：**
-- `supabase.from('voice_profiles').select()` — 角色音色配置列表
+- `supabase.from('voice_profiles').select().eq('project_id', id)` — 角色音色配置列表
 - `supabase.from('voice_profiles').upsert()` — 设置角色音色
-- `supabase.from('subtitles').select()` — 获取字幕数据
+- `supabase.from('dialogues').select()` + `supabase.from('audio_clips').select()` — 获取台词和音频数据，前端生成字幕
 
 **AI 操作（通过 Edge Function）：**
 - `Edge Function: tts-proxy` — 生成单条配音（同步，返回 Storage URL）
@@ -680,8 +682,10 @@ data: {"type": "done", "draft_id": "uuid", "token_usage": {"input": 800, "output
 ```
 
 **数据操作（前端直连 Supabase）：**
-- `supabase.from('timelines').select()` — 获取时间轴数据
-- `supabase.from('timelines').upsert()` — 更新时间轴配置
+- `supabase.from('shots').select().eq('episode_id', eid).order('sort_order')` — 获取镜头序列（即时间轴数据）
+- `supabase.from('shots').update()` — 更新镜头转场/速度/裁剪等合成参数
+- `supabase.from('audio_clips').select().eq('episode_id', eid)` — 获取音频轨道
+- `supabase.from('shot_videos').select()` — 获取镜头视频
 
 **合成操作（通过 Edge Function 或云端 API）：**
 - `Edge Function: render-video` — 调用云端视频合成 API（Creatomate/Shotstack）
@@ -727,13 +731,13 @@ data: {"type": "done", "draft_id": "uuid", "token_usage": {"input": 800, "output
 - 存储路径配置
 
 **数据操作（前端直连 Supabase）：**
-- `supabase.from('settings').select()` — 获取设置
-- `supabase.from('settings').upsert()` — 更新设置
+- `supabase.from('projects').select('settings').eq('id', projectId)` — 获取项目设置
+- `supabase.from('projects').update({ settings: {...} }).eq('id', projectId)` — 更新项目设置
 
 **说明：**
-- API Key 等敏感配置存储在 Supabase Edge Function 环境变量中
-- 用户级设置（默认参数等）存储在 DB 中
-- MVP 阶段 AI 服务配置由管理员在 Supabase Dashboard 设置
+- API Key 等敏感配置存储在 Supabase Edge Function 环境变量中（Dashboard 配置）
+- 用户级设置（默认参数等）存储在 `projects.settings` JSONB 字段中
+- MVP 阶段 AI 服务配置由管理员在 Supabase Dashboard 设置，不在前端暴露
 
 ---
 

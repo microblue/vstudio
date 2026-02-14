@@ -296,7 +296,7 @@ serve(async (req) => {
 
   // 2. 创建 task 记录
   const { data: task } = await supabase.from('tasks').insert({
-    user_id: user.id,
+    project_id: body.project_id,
     type: 'generate_image',
     status: 'pending',
     params: body,
@@ -478,10 +478,11 @@ serve(async (req) => {
   const audioResponse = await fetch('https://api.fish.audio/v1/tts', { ... })
   const audioBlob = await audioResponse.blob()
 
-  // 上传到 Supabase Storage
+  // 上传到 Supabase Storage (media bucket)
+  const path = `projects/${body.project_id}/episodes/${body.episode_id}/audio/${body.shot_id}_dialogue.wav`
   const { data } = await supabase.storage
-    .from('audio')
-    .upload(`${user.id}/${task_id}.wav`, audioBlob)
+    .from('media')
+    .upload(path, audioBlob)
 
   // 返回 Storage URL
   return new Response(JSON.stringify({ audio_url: data.path }))
@@ -543,7 +544,7 @@ const channel = supabase
     event: 'UPDATE',
     schema: 'public',
     table: 'tasks',
-    filter: `user_id=eq.${userId}`,
+    filter: `project_id=eq.${projectId}`,
   }, (payload) => {
     const task = payload.new
     if (task.status === 'done') {
