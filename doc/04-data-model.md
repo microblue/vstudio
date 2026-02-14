@@ -332,65 +332,87 @@ CREATE TABLE voice_profiles (
 CREATE TABLE tasks (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
-  episode_id    UUID,
+  episode_id    UUID REFERENCES episodes(id) ON DELETE SET NULL,
   type          VARCHAR(50) NOT NULL,
   -- 类型: generate_keyframe, generate_video, synthesize_voice,
-  --       extract_assets, generate_shots, render_compose, generate_ref_image
+  --       extract_assets, generate_shots, render_compose, generate_ref_image,
+  --       screenplay_generate
   status        VARCHAR(20) DEFAULT 'pending',
-  -- 状态: pending, queued, running, done, failed, cancelled
+  -- 状态: pending, queued, running, done, failed, cancelled, timeout
+  provider      VARCHAR(50),           -- replicate, fal, anthropic, fish_audio, ffmpeg
+  external_id   VARCHAR(255),          -- 第三方 API 返回的任务 ID（如 Replicate prediction ID）
   priority      INTEGER DEFAULT 0,
   progress      FLOAT DEFAULT 0,       -- 0.0 ~ 1.0
   params        JSONB NOT NULL,        -- 任务参数
   result        JSONB,                 -- 任务结果
   error         TEXT,                  -- 错误信息
-  started_at    TIMESTAMP,
-  completed_at  TIMESTAMP,
-  created_at    TIMESTAMP DEFAULT NOW()
+  retry_count   INTEGER DEFAULT 0,
+  max_retries   INTEGER DEFAULT 3,
+  started_at    TIMESTAMPTZ,
+  completed_at  TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX idx_tasks_external ON tasks(external_id) WHERE external_id IS NOT NULL;
 ```
 
 ---
 
-## 3. 文件存储结构
+## 3. 文件存储（Supabase Storage）
 
-所有生成的媒体文件存储在文件系统中，数据库只记录路径。
+所有媒体文件存储在 **Supabase Storage**，数据库字段记录相对路径（不含 bucket 名）。
+
+### Bucket 定义
+
+| Bucket 名 | 访问权限 | 说明 |
+|-----------|---------|------|
+| `media` | **Private** — 需签名 URL 或通过 RLS 访问 | 所有项目媒体文件（图片/视频/音频） |
+| `exports` | **Private** — 签名 URL 下载 | 最终导出的成品视频 |
+
+### RLS 策略
+
+```sql
+-- media bucket: 用户只能访问自己项目下的文件
+-- 路径格式: projects/{project_id}/...
+-- 策略: auth.uid() 匹配 project.user_id
+
+-- Storage RLS (在 Supabase Dashboard → Storage → Policies 配置)
+-- SELECT/INSERT/DELETE: bucket_id = 'media' AND (storage.foldername(name))[1] = 'projects'
+--   AND EXISTS (SELECT 1 FROM projects WHERE id::text = (storage.foldername(name))[2] AND user_id = auth.uid())
+```
+
+### 路径结构
 
 ```
-storage/
-├── projects/
-│   └── {project_id}/
-│       ├── assets/
-│       │   ├── characters/
-│       │   │   └── {asset_id}/
-│       │   │       ├── ref_000_seed12345.png
-│       │   │       ├── ref_001_seed67890.png
-│       │   │       └── ref_002_seed11111.png
-│       │   ├── locations/
-│       │   │   └── {asset_id}/
-│       │   │       └── ref_*.png
-│       │   └── props/
-│       │       └── {asset_id}/
-│       │           └── ref_*.png
-│       └── episodes/
-│           └── {episode_number}/
-│               ├── keyframes/
-│               │   ├── S01_KF1_000_seed42.png
-│               │   ├── S01_KF1_001_seed99.png
-│               │   └── ...
-│               ├── videos/
-│               │   ├── S01_video.mp4
-│               │   ├── S02_video.mp4
-│               │   └── ...
-│               ├── audio/
-│               │   ├── S01_dialogue.wav
-│               │   ├── S03_sfx.wav
-│               │   └── ...
-│               ├── subtitles/
-│               │   ├── subtitles.srt
-│               │   └── subtitles.vtt
-│               └── output/
-│                   ├── final.mp4
-│                   └── render_log.txt
+media bucket:
+projects/{project_id}/
+├── assets/
+│   ├── characters/{asset_id}/ref_000_seed12345.png
+│   ├── locations/{asset_id}/ref_000_seed12345.png
+│   └── props/{asset_id}/ref_000_seed12345.png
+└── episodes/{episode_number}/
+    ├── keyframes/S01_KF1_000_seed42.png
+    ├── videos/S01_video.mp4
+    ├── audio/S01_dialogue.wav
+    ├── subtitles/subtitles.srt
+    └── output/final.mp4
+
+exports bucket:
+{project_id}/{episode_number}/final_1080p.mp4
+```
+
+### 前端访问方式
+
+```typescript
+// 获取签名 URL（有效期 1 小时）
+const { data } = await supabase.storage
+  .from('media')
+  .createSignedUrl('projects/{id}/episodes/1/videos/S01_video.mp4', 3600)
+
+// 上传文件（用户自定义参考图）
+await supabase.storage
+  .from('media')
+  .upload('projects/{id}/assets/characters/{asset_id}/custom.png', file)
 ```
 
 ---
@@ -420,10 +442,12 @@ CREATE INDEX idx_keyframe_candidates_kf ON keyframe_candidates(keyframe_id);
 CREATE INDEX idx_dialogues_shot ON dialogues(shot_id);
 CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
 CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_external ON tasks(external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX idx_tasks_type ON tasks(type);
 CREATE INDEX idx_audio_clips_episode ON audio_clips(episode_id);
--- JSONB 路径索引
-CREATE INDEX idx_shots_prompts ON shots USING GIN(prompts jsonb_path_ops);
+CREATE INDEX idx_screenplay_drafts_project ON screenplay_drafts(project_id);
+-- JSONB 路径索引（metadata 列）
+CREATE INDEX idx_shots_metadata ON shots USING GIN(metadata jsonb_path_ops);
+CREATE INDEX idx_tasks_params_shot ON tasks((params->>'shot_id')) WHERE params->>'shot_id' IS NOT NULL;
 ```
 
 ---
@@ -500,11 +524,12 @@ CREATE POLICY shots_owner ON shots
 ## 8. JSONB 索引最佳实践
 
 ```sql
--- GIN 索引：支持 @>, ?, ?| 等操作符
-CREATE INDEX idx_shots_prompts ON shots USING GIN(prompts jsonb_path_ops);
+-- GIN 索引：支持 @>, ?, ?| 等操作符（用于 metadata 列）
+CREATE INDEX idx_shots_metadata ON shots USING GIN(metadata jsonb_path_ops);
 
--- 表达式索引：频繁查询特定路径
-CREATE INDEX idx_tasks_type_from_params ON tasks((params->>'shot_id'));
+-- 表达式索引：频繁查询 JSONB 内特定路径
+CREATE INDEX idx_tasks_params_shot ON tasks((params->>'shot_id'))
+  WHERE params->>'shot_id' IS NOT NULL;
 
 -- 部分索引：只索引特定状态
 CREATE INDEX idx_tasks_running ON tasks(status) WHERE status = 'running';
@@ -514,19 +539,7 @@ CREATE INDEX idx_tasks_running ON tasks(status) WHERE status = 'running';
 
 ## 9. Supabase Storage 路径约定
 
-```
-projects/{project_id}/
-├── assets/
-│   ├── characters/{asset_id}/ref_*.png
-│   ├── locations/{asset_id}/ref_*.png
-│   └── props/{asset_id}/ref_*.png
-└── episodes/{episode_number}/
-    ├── keyframes/S01_KF1_*.png
-    ├── videos/S01_video.mp4
-    ├── audio/S01_dialogue.wav
-    ├── subtitles/
-    └── output/final.mp4
-```
+> 详见 § 3. 文件存储（Supabase Storage）— bucket 定义、RLS 策略、完整路径结构均在该节。
 
 ---
 

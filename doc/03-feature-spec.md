@@ -17,6 +17,142 @@
 
 ---
 
+## 1.1 认证流程
+
+### 登录方式
+
+| 方式 | 优先级 | 说明 |
+|------|--------|------|
+| **Email + Password** | MVP | Supabase Auth 内置，注册/登录/忘记密码 |
+| **Magic Link** | MVP | 邮箱无密码登录 |
+| **GitHub OAuth** | P1 | 面向开发者/创作者 |
+| **Google OAuth** | P1 | 主流 OAuth |
+
+### 认证架构
+
+```
+前端 (SvelteKit)
+  ├── supabase.auth.signInWithPassword()    → Email 登录
+  ├── supabase.auth.signInWithOtp()         → Magic Link
+  ├── supabase.auth.signInWithOAuth()       → OAuth
+  └── supabase.auth.getSession()            → 获取当前会话
+       ↓ JWT
+  Supabase (RLS 自动验证 auth.uid())
+  Edge Functions (req.headers.Authorization → Bearer JWT)
+```
+
+### 未登录状态
+
+- 未登录用户只能看到 Landing Page / 登录页
+- 所有 `/project/*` 路由需要登录，SvelteKit `+layout.server.ts` 检查 session
+- 未登录访问受保护路由 → 302 重定向到 `/auth/login`
+- Edge Function 调用无有效 JWT → 401
+
+### Storage RLS
+
+```sql
+-- Supabase Storage Policies (在 Dashboard 配置)
+-- Bucket: media
+-- SELECT: 用户只能读取自己项目下的文件
+--   (storage.foldername(name))[2]::uuid IN (SELECT id FROM projects WHERE user_id = auth.uid())
+-- INSERT: 同上
+-- DELETE: 同上
+
+-- Bucket: exports
+-- SELECT: 同 media
+-- INSERT: 仅 service_role（Edge Function 写入）
+```
+
+### Edge Function JWT 验证
+
+```typescript
+// 每个 Edge Function 统一验证模板
+const authHeader = req.headers.get('Authorization')
+if (!authHeader) return new Response('Unauthorized', { status: 401 })
+
+const token = authHeader.replace('Bearer ', '')
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+const { data: { user }, error } = await supabase.auth.getUser(token)
+if (error || !user) return new Response('Unauthorized', { status: 401 })
+
+// user.id 可用于后续操作
+```
+
+### SvelteKit Auth 集成
+
+```typescript
+// src/hooks.server.ts
+import { createServerClient } from '@supabase/ssr'
+
+export const handle = async ({ event, resolve }) => {
+  event.locals.supabase = createServerClient(
+    PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY,
+    { cookies: { get: (key) => event.cookies.get(key), ... } }
+  )
+  event.locals.getSession = async () => {
+    const { data: { session } } = await event.locals.supabase.auth.getSession()
+    return session
+  }
+  return resolve(event)
+}
+```
+
+---
+
+## 1.2 SvelteKit 路由文件映射
+
+```
+src/routes/
+├── +layout.svelte                    # 根 layout（全局样式、Supabase 初始化）
+├── +layout.server.ts                 # 服务端 session 加载
+├── +page.svelte                      # Landing Page（未登录）/ 重定向（已登录）
+│
+├── auth/
+│   ├── +layout.svelte                # Auth layout（居中卡片布局）
+│   ├── login/+page.svelte            # 登录页
+│   ├── register/+page.svelte         # 注册页
+│   ├── forgot/+page.svelte           # 忘记密码
+│   └── callback/+server.ts           # OAuth 回调处理
+│
+├── (app)/                            # Group layout — 需要登录的所有页面
+│   ├── +layout.svelte                # App layout（左侧导航 + 顶部状态栏 + 任务队列）
+│   ├── +layout.server.ts             # 登录守卫（无 session → redirect /auth/login）
+│   │
+│   ├── +page.svelte                  # Dashboard — 项目列表 (/)
+│   │
+│   ├── project/[id]/
+│   │   ├── +layout.svelte            # 项目 layout（项目侧边导航）
+│   │   ├── +layout.server.ts         # 加载项目数据 + 权限校验
+│   │   ├── +page.svelte              # 项目概览 (/project/:id)
+│   │   │
+│   │   ├── script/
+│   │   │   ├── +page.svelte          # 剧本编辑器
+│   │   │   └── create/+page.svelte   # AI 剧本创作
+│   │   │
+│   │   ├── assets/+page.svelte       # 资产管理
+│   │   ├── shots/+page.svelte        # 分镜编辑器
+│   │   ├── generate/+page.svelte     # 画面/视频生成工作台
+│   │   ├── audio/+page.svelte        # 音频工作台
+│   │   ├── compose/+page.svelte      # 后期合成/时间轴
+│   │   └── export/+page.svelte       # 导出
+│   │
+│   └── settings/+page.svelte         # 系统设置
+│
+└── api/                              # SvelteKit API routes（如需要）
+    └── health/+server.ts             # 健康检查
+```
+
+### Layout 层级
+
+```
++layout.svelte (根: 全局样式、Supabase provider、主题)
+  ├── auth/+layout.svelte (Auth: 居中卡片)
+  └── (app)/+layout.svelte (App: 侧边导航 + 状态栏)
+       └── project/[id]/+layout.svelte (项目: 项目侧边导航 + 阶段状态)
+```
+
+---
+
 ## 2. 模块详细设计
 
 ### 2.0 剧本创作（Screenplay Creation）

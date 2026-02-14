@@ -37,6 +37,87 @@ AI 驱动的电影短剧创作平台（Web），完整的 AI 短剧制作 pipeli
 4. 每张表至少保留一个 `meta JSONB DEFAULT '{}'` 用于未来扩展
 5. 统一数据库设计文档：`doc/database-design.md`
 
+## 开发指南
+
+### Supabase 初始化
+
+```bash
+# 1. 安装 CLI
+pnpm add -g supabase
+
+# 2. 初始化（在项目根目录）
+supabase init
+
+# 3. 关联远端项目
+supabase link --project-ref YOUR_PROJECT_REF
+
+# 4. 启动本地开发环境
+supabase start
+# 输出 API URL、anon key、service_role key → 写入 .env
+
+# 5. 执行数据库迁移
+supabase db push          # 推送本地 migrations 到远端
+# 或
+supabase migration up     # 本地执行迁移
+
+# 6. 生成 TypeScript 类型
+supabase gen types typescript --local > src/lib/database.types.ts
+
+# 7. Edge Functions 本地开发
+supabase functions serve   # 本地启动所有 Edge Functions
+
+# 8. 部署 Edge Functions
+supabase functions deploy generate-image
+supabase functions deploy generate-video
+supabase functions deploy llm-proxy
+supabase functions deploy screenplay-generate
+supabase functions deploy tts-proxy
+supabase functions deploy webhook-callback
+supabase functions deploy render-compose
+
+# 9. 设置 Edge Function 环境变量（见 .env.example）
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+supabase secrets set REPLICATE_API_TOKEN=r8_...
+# ...其余变量同理
+```
+
+### 迁移文件规范
+
+```
+supabase/migrations/
+├── 20260214_001_create_projects.sql
+├── 20260214_002_create_episodes.sql
+├── 20260214_003_create_scripts.sql
+├── 20260214_004_create_characters.sql
+├── 20260214_005_create_locations.sql
+├── 20260214_006_create_props.sql
+├── 20260214_007_create_shots.sql
+├── 20260214_008_create_dialogues.sql
+├── 20260214_009_create_keyframes.sql
+├── 20260214_010_create_keyframe_candidates.sql
+├── 20260214_011_create_shot_videos.sql
+├── 20260214_012_create_audio_clips.sql
+├── 20260214_013_create_voice_profiles.sql
+├── 20260214_014_create_tasks.sql
+├── 20260214_015_create_screenplay_drafts.sql
+├── 20260214_016_create_indexes.sql
+├── 20260214_017_create_rls_policies.sql
+└── 20260214_018_seed_data.sql
+```
+
+### Seed Data
+
+`supabase/seed.sql` 包含：
+- 测试用户（通过 `auth.users` 或 Supabase Dashboard 创建）
+- 示例项目 + 剧集
+- 示例剧本（用于验证 pipeline）
+
+### 环境变量
+
+见 `.env.example`，详细说明见 `doc/06-tech-stack.md` § 7。
+
+---
+
 ## 规则
 - 修改代码后必须测试
 - AI 服务都通过 HTTP API 调用，不嵌入模型

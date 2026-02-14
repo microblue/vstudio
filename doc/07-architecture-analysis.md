@@ -10,7 +10,8 @@ Browser (SvelteKit)
   └──→ Supabase Edge Functions
          ├──→ Replicate / fal.ai (图片/视频生成)
          ├──→ Anthropic API (LLM)
-         └──→ Fish Audio API (TTS)
+         ├──→ Fish Audio API (TTS)
+         └──→ 自建 FFmpeg 服务 (视频合成)
               │
               └──→ webhook 回调 → Edge Function → DB + Storage
 ```
@@ -77,13 +78,25 @@ Browser (SvelteKit)
 
 ---
 
-## 为什么不要 Python 后台
+## 自建服务
+
+### FFmpeg 合成服务（已确认）
+
+视频合成采用**自建 FFmpeg HTTP API 服务**（非云端 SaaS），原因：
+- 完全控制合成逻辑（转场、字幕烧录、多轨混音）
+- 无按量计费，长期成本低
+- 部署简单，2 核 4GB VPS 即可
+- API 设计详见 `doc/05-api-integration.md` § 7
+
+VStudio 架构中，FFmpeg 服务与第三方 AI API 地位相同——都是 Edge Function 调用的 HTTP 后端。
+
+### Python 后台 — 仍然不需要
 
 | 考虑 | 结论 |
 |------|------|
 | ComfyUI 需要本地 GPU | MVP 用第三方 API，不需要本地 ComfyUI |
 | GPU 任务队列管理 | 第三方 API 自带队列，无需自建 |
-| FFmpeg 视频合成 | 云端合成 API 或 FFmpeg.wasm，将来自建服务也是 API |
+| FFmpeg 视频合成 | **自建 FFmpeg 服务（HTTP API）** |
 | Python 后端 | 将来自建 ComfyUI 服务时再考虑，MVP 不需要 |
 | 维护成本 | 少一个服务 = 少一半运维 |
 
@@ -113,4 +126,5 @@ V2:   前端 → Edge Function → 自建 ComfyUI API 服务 (包装成 HTTP API
 | 图片/视频 | Replicate / fal.ai |
 | LLM | Anthropic Claude |
 | TTS | Fish Audio |
-| 部署 | Vercel/Cloudflare Pages (前端) + Supabase (全托管) |
+| 视频合成 | 自建 FFmpeg HTTP API 服务 |
+| 部署 | Vercel/Cloudflare Pages (前端) + Supabase (全托管) + FFmpeg VPS |

@@ -28,6 +28,193 @@ VStudio 通过 Supabase Edge Functions 代理所有外部 AI API 调用。前端
 
 ---
 
+## 1.1 Edge Function 统一清单
+
+VStudio 共 7 个 Edge Function，职责如下：
+
+| 函数名 | 类型 | 说明 |
+|--------|------|------|
+| `llm-proxy` | 同步 streaming | **通用 LLM 代理**。处理所有非剧本生成的 LLM 调用：辅助写作、资产提取、分镜生成、关键帧规划、提示词优化。通过 `action` 参数区分场景。 |
+| `screenplay-generate` | 同步 streaming | **剧本生成专用**。基于用户大纲生成完整剧本。独立于 `llm-proxy` 因为：① 有专用 system prompt ② 需要写入 `screenplay_drafts` 表 ③ 支持多模型路由。 |
+| `generate-image` | 异步 webhook | 代理 Replicate/fal.ai 图片生成 API（资产参考图、关键帧） |
+| `generate-video` | 异步 webhook | 代理 Replicate/fal.ai 视频生成 API（I2V） |
+| `tts-proxy` | 同步 | 代理 Fish Audio / Edge TTS 语音合成，结果上传 Storage |
+| `render-compose` | 异步 | 调用自建 FFmpeg 服务执行视频合成 |
+| `webhook-callback` | 回调接收 | 统一接收 Replicate/fal.ai/FFmpeg 服务的异步回调，更新 DB + Storage |
+
+### `llm-proxy` vs `screenplay-generate` 的关系
+
+- **`llm-proxy`** 是通用 LLM 代理，负责所有「工具型」LLM 调用。前端通过 `action` 参数指定场景：
+  - `action: "expand" | "rewrite" | "continue" | "translate"` — 辅助写作
+  - `action: "extract-assets"` — 资产提取
+  - `action: "generate-shots"` — 分镜生成
+  - `action: "generate-keyframes"` — 关键帧规划
+  - `action: "optimize-prompt"` — 提示词优化
+- **`screenplay-generate`** 是剧本创作专用函数，有独立的业务逻辑（写入 `screenplay_drafts`、多模型路由、版本管理），不走 `llm-proxy`。
+
+### 各 Edge Function Request/Response Schema
+
+#### `llm-proxy`
+
+```
+POST /functions/v1/llm-proxy
+Authorization: Bearer <user_jwt>
+
+Request:
+{
+  "action": "extract-assets" | "generate-shots" | "generate-keyframes" | "optimize-prompt" | "expand" | "rewrite" | "continue" | "translate",
+  "model": "claude-sonnet-4" | "claude-opus-4",  // 可选，默认 sonnet
+  "max_tokens": 4096,                              // 可选
+  "context": { ... },                              // action 相关的上下文数据
+  "text": "...",                                    // 辅助写作时的选中文本
+  "messages": [ ... ]                               // 直接传 messages（高级用法）
+}
+
+Response (streaming SSE):
+data: {"type": "chunk", "content": "..."}
+data: {"type": "done", "token_usage": {"input": 800, "output": 3200}}
+
+Response (非 streaming，如 optimize-prompt):
+{
+  "prompt_visual": "...",
+  "prompt_motion": "...",
+  "negative_prompt": "..."
+}
+```
+
+#### `screenplay-generate`
+
+```
+POST /functions/v1/screenplay-generate
+Authorization: Bearer <user_jwt>
+
+Request:
+{
+  "project_id": "uuid",
+  "outline": "故事大纲文本",
+  "genre": "sci-fi",
+  "target_duration": "3min",
+  "language": "zh",
+  "extra_requirements": "...",
+  "model": "claude-opus-4" | "claude-sonnet-4" | "gpt-4o" | "deepseek-r1" | "custom",
+  "custom_endpoint": "https://...",  // model=custom 时必填
+  "stream": true
+}
+
+Response (streaming SSE):
+data: {"type": "chunk", "content": "# 第一幕：觉醒\n\n"}
+...
+data: {"type": "done", "draft_id": "uuid", "token_usage": {"input": 800, "output": 3200}}
+```
+
+#### `generate-image`
+
+```
+POST /functions/v1/generate-image
+Authorization: Bearer <user_jwt>
+
+Request:
+{
+  "project_id": "uuid",
+  "shot_id": "uuid",          // 可选，关键帧生成时传
+  "keyframe_id": "uuid",      // 可选
+  "prompt": "cinematic film still...",
+  "negative_prompt": "...",
+  "width": 1344,
+  "height": 768,
+  "num_candidates": 3,
+  "seed": 42,                 // 可选
+  "reference_images": ["storage_path"],  // 可选，I2I 时传
+  "strength": 0.55,           // 可选，I2I denoise
+  "provider": "replicate" | "fal",       // 可选，默认 replicate
+  "model": "flux-1.1-pro"               // 可选
+}
+
+Response:
+{ "task_id": "uuid" }
+```
+
+#### `generate-video`
+
+```
+POST /functions/v1/generate-video
+Authorization: Bearer <user_jwt>
+
+Request:
+{
+  "project_id": "uuid",
+  "shot_id": "uuid",
+  "keyframe_image": "storage_path",  // 起始关键帧图片
+  "prompt_motion": "camera slowly pushes in...",
+  "num_frames": 121,
+  "fps": 25,
+  "seed": 42,                // 可选
+  "provider": "replicate",   // 可选
+  "model": "wan-2.1-i2v"     // 可选
+}
+
+Response:
+{ "task_id": "uuid" }
+```
+
+#### `tts-proxy`
+
+```
+POST /functions/v1/tts-proxy
+Authorization: Bearer <user_jwt>
+
+Request:
+{
+  "project_id": "uuid",
+  "episode_id": "uuid",
+  "shot_id": "uuid",
+  "text": "台词文本",
+  "voice_id": "fish_audio_voice_id",
+  "provider": "fish_audio" | "edge_tts",
+  "speed": 1.0,
+  "emotion": "neutral"
+}
+
+Response:
+{
+  "audio_url": "projects/{id}/episodes/{n}/audio/S01_dialogue.wav",
+  "duration_s": 2.5,
+  "audio_clip_id": "uuid"
+}
+```
+
+#### `render-compose`
+
+```
+POST /functions/v1/render-compose
+Authorization: Bearer <user_jwt>
+
+Request:
+{
+  "project_id": "uuid",
+  "episode_id": "uuid",
+  "resolution": "1920x1080",
+  "fps": 24,
+  "include_subtitles": true,
+  "subtitle_style": { "font_size": 36, "color": "#FFFFFF", "outline": 2 }
+}
+
+Response:
+{ "task_id": "uuid" }
+```
+
+#### `webhook-callback`
+
+```
+POST /functions/v1/webhook-callback?task_id={uuid}&source={replicate|fal|ffmpeg}
+
+Request: 第三方 API 回调 payload（各提供商格式不同）
+
+Response: 200 "ok"
+```
+
+---
+
 ## 2. 图片生成（T2I / I2I）
 
 ### 2.1 提供商
@@ -370,16 +557,132 @@ const channel = supabase
 
 ---
 
-## 7. 视频合成
+## 7. 视频合成 — 自建 FFmpeg 服务
 
-MVP 阶段视频合成方案：
+**确定方案：自建 FFmpeg HTTP API 服务。**
 
-| 方案 | 说明 | 适用 |
-|------|------|------|
-| **Creatomate API** | 云端视频合成 | 转场、字幕叠加、多轨合成 |
-| **Shotstack API** | 云端视频合成 | 备选 |
-| **FFmpeg.wasm** | 浏览器端 FFmpeg | 轻量操作（裁剪、拼接） |
-| **自建 FFmpeg 服务** | 将来扩展 | 包装成 API，Edge Function 调用 |
+### 7.1 架构
+
+```
+前端 → Edge Function (render-compose) → FFmpeg 服务 (HTTP API)
+                                              ↓ 完成后
+                                        webhook → Edge Function (webhook-callback) → DB + Storage
+```
+
+FFmpeg 服务是一个独立的 HTTP 服务（Node.js/Python/Go 均可），部署在有 FFmpeg 的服务器上。
+
+### 7.2 FFmpeg 服务 API 设计
+
+#### 认证
+
+所有请求通过 `Authorization: Bearer {FFMPEG_SERVICE_SECRET}` 验证（共享密钥，由 Edge Function 持有）。
+
+#### `POST /compose` — 提交合成任务
+
+```json
+Request:
+{
+  "job_id": "uuid",                    // VStudio task_id，用于回调
+  "webhook_url": "https://xxx.supabase.co/functions/v1/webhook-callback?task_id=xxx&source=ffmpeg",
+  "resolution": { "width": 1920, "height": 1080 },
+  "fps": 24,
+  "output_format": "mp4",
+  "codec": { "video": "libx264", "audio": "aac", "crf": 18, "audio_bitrate": "192k" },
+  "shots": [
+    {
+      "shot_id": "S01",
+      "video_url": "https://signed-url-to-video.mp4",
+      "duration_s": 4.0,
+      "speed": 1.0,
+      "trim": { "start_s": 0, "end_s": null },
+      "transition_out": { "type": "fadewhite", "duration_s": 0.5 }
+    }
+  ],
+  "audio_tracks": [
+    {
+      "type": "dialogue",
+      "url": "https://signed-url-to-audio.wav",
+      "start_s": 3.0,
+      "volume": 1.0
+    },
+    {
+      "type": "bgm",
+      "url": "https://signed-url-to-bgm.mp3",
+      "start_s": 0,
+      "volume": 0.3,
+      "fade_in_s": 2.0,
+      "fade_out_s": 3.0
+    }
+  ],
+  "subtitles": {
+    "srt_url": "https://signed-url-to-subtitles.srt",
+    "burn_in": true,
+    "style": {
+      "font": "Noto Sans CJK SC",
+      "font_size": 36,
+      "color": "#FFFFFF",
+      "outline_color": "#000000",
+      "outline_width": 2,
+      "position": "bottom",
+      "margin_bottom": 40
+    }
+  }
+}
+
+Response:
+{
+  "job_id": "uuid",
+  "status": "queued",
+  "position": 3            // 队列位置
+}
+```
+
+#### `GET /status/:job_id` — 查询任务状态
+
+```json
+Response:
+{
+  "job_id": "uuid",
+  "status": "processing" | "queued" | "done" | "failed",
+  "progress": 0.65,       // 0.0 ~ 1.0
+  "output_url": "https://...",  // status=done 时返回
+  "error": "..."                // status=failed 时返回
+}
+```
+
+#### `DELETE /job/:job_id` — 取消任务
+
+```json
+Response: { "cancelled": true }
+```
+
+#### Webhook 回调
+
+FFmpeg 服务完成后 POST 到 `webhook_url`：
+
+```json
+{
+  "job_id": "uuid",
+  "status": "done" | "failed",
+  "output_url": "https://ffmpeg-server/outputs/xxx.mp4",  // 临时 URL，Edge Function 需下载并转存到 Storage
+  "duration_s": 65.2,
+  "file_size_bytes": 52428800,
+  "error": null
+}
+```
+
+### 7.3 FFmpeg 服务部署
+
+- **推荐技术栈：** Node.js + fluent-ffmpeg 或 Python + subprocess
+- **部署位置：** 任意有 FFmpeg 的 VPS（如 Hetzner、自有服务器）
+- **资源需求：** 2 CPU + 4GB RAM 起步，无需 GPU
+- **队列：** 内置任务队列（BullMQ / Celery），限制并发 2-4 个任务
+- **文件处理流程：**
+  1. 接收请求后，下载所有 signed URL 的素材到本地临时目录
+  2. 构建 FFmpeg 命令执行合成
+  3. 上传结果到临时 HTTP 路径 / 直接回传 URL
+  4. Edge Function 的 webhook-callback 下载结果并上传到 Supabase Storage
+  5. 清理临时文件
 
 ---
 
