@@ -21,25 +21,33 @@
 
 ### 登录方式
 
-| 方式 | 优先级 | 说明 |
-|------|--------|------|
-| **Email + Password** | MVP | Supabase Auth 内置，注册/登录/忘记密码 |
-| **Magic Link** | MVP | 邮箱无密码登录 |
-| **GitHub OAuth** | P1 | 面向开发者/创作者 |
-| **Google OAuth** | P1 | 主流 OAuth |
+| 方式 | 说明 |
+|------|------|
+| **Email + Password** | Supabase Auth 内置，**不验证邮箱**（`email_confirm = false`） |
+
+> **设计决策：** MVP 只支持 Email + Password 注册/登录，不做邮箱验证、Magic Link、OAuth。注册即可用，零摩擦。
+
+### Supabase Auth 配置
+
+在 Supabase Dashboard → Authentication → Settings：
+- **Enable email confirmations** → **关闭**（`GOTRUE_MAILER_AUTOCONFIRM=true`）
+- **Enable email signup** → 开启
+- 不需要配置 SMTP（因为不发验证邮件）
 
 ### 认证架构
 
 ```
 前端 (SvelteKit)
-  ├── supabase.auth.signInWithPassword()    → Email 登录
-  ├── supabase.auth.signInWithOtp()         → Magic Link
-  ├── supabase.auth.signInWithOAuth()       → OAuth
-  └── supabase.auth.getSession()            → 获取当前会话
+  ├── supabase.auth.signUp({ email, password })     → 注册（立即可用）
+  ├── supabase.auth.signInWithPassword({ email, password })  → 登录
+  ├── supabase.auth.signOut()                        → 登出
+  └── supabase.auth.getSession()                     → 获取当前会话
        ↓ JWT
   Supabase (RLS 自动验证 auth.uid())
   Edge Functions (req.headers.Authorization → Bearer JWT)
 ```
+
+> **注意：** Supabase Auth 的 `signUp` 需要 email 格式的字段，但因为关闭了邮箱验证，用户可以用任意 email 格式字符串注册（如 `user1@vstudio.local`）。如需纯用户名登录，前端可自动拼接 `@vstudio.local` 后缀。
 
 ### 未登录状态
 
@@ -110,9 +118,7 @@ src/routes/
 ├── auth/
 │   ├── +layout.svelte                # Auth layout（居中卡片布局）
 │   ├── login/+page.svelte            # 登录页
-│   ├── register/+page.svelte         # 注册页
-│   ├── forgot/+page.svelte           # 忘记密码
-│   └── callback/+server.ts           # OAuth 回调处理
+│   └── register/+page.svelte         # 注册页
 │
 ├── (app)/                            # Group layout — 需要登录的所有页面
 │   ├── +layout.svelte                # App layout（左侧导航 + 顶部状态栏 + 任务队列）
