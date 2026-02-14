@@ -20,6 +20,7 @@
   - 拖拽：@dnd-kit → svelte-dnd-action
   - 部署：Vercel 或 Cloudflare Pages 均可
   - 更新了 AGENTS.md、doc/06-tech-stack.md、doc/07-architecture-analysis.md
+  - **Dawson 确认 UI 库选用 shadcn-svelte**（底层基于 Bits UI）
 - **架构决策更新：不使用本地 ComfyUI 作为图片/视频生成后端**
   - 所有生成类任务通过 HTTP 调用外部服务（Replicate、fal.ai 等付费 API，或自己搭建的远程服务）
   - 本机不需要 GPU/ComfyUI 环境，降低部署复杂度
