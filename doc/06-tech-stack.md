@@ -5,8 +5,8 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     客户端 (Browser)                     │
-│  Next.js 15 (App Router) + React 19 + TypeScript        │
-│  TailwindCSS + shadcn/ui + zustand                      │
+│  SvelteKit + Svelte 5 + TypeScript                      │
+│  TailwindCSS + shadcn-svelte + Svelte Stores            │
 │  Supabase Client (Auth, DB, Storage, Realtime)          │
 └─────────────┬──────────────────────┬────────────────────┘
               │ 读写数据              │ AI 生成任务
@@ -43,14 +43,14 @@
 
 | 项目 | 选择 | 理由 |
 |------|------|------|
-| 框架 | **Next.js 15** (App Router) | React 生态最成熟，SSR/SSG，AI 工具链完善 |
+| 框架 | **SvelteKit** + **Svelte 5** | 更轻量、编译时优化、内置 SSR/SSG、开发体验优秀 |
 | 语言 | **TypeScript** | 类型安全，AI 代码生成质量高 |
-| UI 库 | **shadcn/ui** + **TailwindCSS** | 可定制、轻量、AI 友好 |
-| 状态管理 | **zustand** | 轻量、简单 |
+| UI 库 | **shadcn-svelte** + **TailwindCSS** | shadcn 的 Svelte 版，可定制、轻量 |
+| 状态管理 | **Svelte Stores** (runes) | Svelte 5 内置响应式，无需额外状态库 |
 | Supabase | **@supabase/supabase-js** | Auth、DB 查询、Storage、Realtime 一站式 |
 | 编辑器 | **CodeMirror 6** 或 **Monaco** | Markdown 编辑 |
 | 视频播放 | **video.js** 或原生 `<video>` | 视频预览 |
-| 拖拽 | **@dnd-kit/core** | 镜头排序 |
+| 拖拽 | **svelte-dnd-action** | 镜头排序 |
 
 ### 关键前端组件
 
@@ -138,15 +138,15 @@
 ## 6. 部署
 
 ```
-Vercel (免费):
-  └── Next.js 前端
+Vercel / Cloudflare Pages (免费):
+  └── SvelteKit 前端
 
 Supabase (免费额度):
   ├── Auth + DB + Storage + Realtime
   └── Edge Functions (AI API 代理 + webhook)
 ```
 
-**零运维架构**：无需管理服务器、Docker、GPU 机器。全部托管在 Vercel + Supabase。
+**零运维架构**：无需管理服务器、Docker、GPU 机器。全部托管在 Vercel/Cloudflare Pages + Supabase。
 
 ---
 
@@ -156,8 +156,8 @@ Supabase (免费额度):
 |------|------|
 | **pnpm** | 前端包管理 |
 | **Supabase CLI** | 本地开发、迁移、Edge Functions 开发、类型生成 |
-| **Vitest** | 前端测试 |
-| **ESLint + Prettier** | 前端规范 |
+| **Vitest** + **Playwright** | 单元测试 + E2E 测试 |
+| **ESLint + Prettier** + **svelte-check** | 前端规范 + Svelte 类型检查 |
 | **Deno** | Edge Functions 本地开发 |
 
 ---
@@ -166,7 +166,7 @@ Supabase (免费额度):
 
 ### 8.1 为什么纯 Supabase，不要 Python 后台？
 - **简单**：只维护前端 + Edge Functions，无后端服务器
-- **零运维**：Vercel + Supabase 全托管
+- **零运维**：Vercel/Cloudflare Pages + Supabase 全托管
 - **成本低**：免费额度对 MVP 够用
 - **开发快**：前端一把梭，不用维护两套代码
 - 所有"重活"（图片/视频生成）交给第三方 API，自己不跑 GPU
@@ -195,7 +195,7 @@ Supabase (免费额度):
 
 | 操作 | 预计耗时 | 说明 |
 |------|----------|------|
-| 页面加载 | <1s | Vercel CDN |
+| 页面加载 | <1s | Vercel/Cloudflare CDN |
 | LLM 资产提取 | 15-30s | Anthropic API |
 | LLM 分镜生成 | 20-40s | Anthropic API |
 | 单张关键帧 | 30-90s | Replicate/fal.ai |

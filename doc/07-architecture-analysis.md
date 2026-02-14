@@ -5,7 +5,7 @@
 **纯 Web + Supabase 架构，无自建后台。**
 
 ```
-Browser (Next.js)
+Browser (SvelteKit)
   ├──→ Supabase (Auth, DB, Storage, Realtime)
   └──→ Supabase Edge Functions
          ├──→ Replicate / fal.ai (图片/视频生成)
@@ -84,7 +84,7 @@ Browser (Next.js)
 | ComfyUI 需要本地 GPU | MVP 用第三方 API，不需要本地 ComfyUI |
 | GPU 任务队列管理 | 第三方 API 自带队列，无需自建 |
 | FFmpeg 视频合成 | 云端合成 API 或 FFmpeg.wasm，将来自建服务也是 API |
-| Python 复用 fuxi 代码 | 将来自建 ComfyUI 服务时再复用，MVP 不需要 |
+| Python 后端 | 将来自建 ComfyUI 服务时再考虑，MVP 不需要 |
 | 维护成本 | 少一个服务 = 少一半运维 |
 
 ---
@@ -104,7 +104,7 @@ V2:   前端 → Edge Function → 自建 ComfyUI API 服务 (包装成 HTTP API
 
 | 组件 | 技术 |
 |------|------|
-| 前端 | Next.js 15 + TypeScript + shadcn/ui + Supabase Client |
+| 前端 | SvelteKit + Svelte 5 + TypeScript + shadcn-svelte + Supabase Client |
 | Auth | Supabase Auth |
 | 数据库 | Supabase PostgreSQL + RLS |
 | 文件存储 | Supabase Storage |
@@ -113,4 +113,4 @@ V2:   前端 → Edge Function → 自建 ComfyUI API 服务 (包装成 HTTP API
 | 图片/视频 | Replicate / fal.ai |
 | LLM | Anthropic Claude |
 | TTS | Fish Audio |
-| 部署 | Vercel (前端) + Supabase (全托管) |
+| 部署 | Vercel/Cloudflare Pages (前端) + Supabase (全托管) |

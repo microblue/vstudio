@@ -103,7 +103,7 @@ CREATE TABLE script_versions (
 CREATE TABLE characters (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
-  asset_id      VARCHAR(100) NOT NULL, -- 英文ID: "young_fuxi"
+  asset_id      VARCHAR(100) NOT NULL, -- 英文ID: "hero_john"
   zh_name       VARCHAR(100),
   en_name       VARCHAR(100),
   gender        VARCHAR(20),           -- male, female, other
@@ -368,107 +368,14 @@ storage/
 
 ---
 
-## 4. JSON 数据结构（兼容 fuxi pipeline）
+## 4. JSON 数据导出
 
-VStudio 在数据库存储的同时，也维护与 fuxi pipeline 兼容的 JSON 文件，便于直接调用 pipeline 脚本。
+VStudio 数据库是 source of truth。支持通过 Edge Function 导出标准 JSON 格式，用于外部工具集成或备份：
 
-### 4.1 shots.json
+- `GET /functions/v1/export-shots?episode_id=xxx` → 镜头数据 JSON
+- `GET /functions/v1/export-characters?project_id=xxx` → 角色数据 JSON
 
-```json
-{
-  "episode": "ep001",
-  "format": {
-    "resolution": "1920x1080",
-    "aspect_ratio": "16:9",
-    "fps": 24
-  },
-  "transitions": {
-    "S01->S02": { "type": "hard_cut", "dur": 0 },
-    "S02->S03": { "type": "fadewhite", "dur": 0.5 }
-  },
-  "shots": [
-    {
-      "shot_id": "S01",
-      "scene": "1-1",
-      "duration_s": 4,
-      "location": "场景描述",
-      "location_ref": "lingzi_capital_data_core",
-      "characters": [],
-      "character_refs": [],
-      "prop_refs": ["golden_data_stream"],
-      "camera": "超大远景，俯冲推进",
-      "action": "未来都市全貌",
-      "dialogue": [],
-      "emotion": "震撼",
-      "prompt_visual": "...",
-      "prompt_motion": "...",
-      "transition_out": "cut",
-      "transition_duration_s": 0,
-      "sfx_bgm": "电子交响乐",
-      "speed": 1.0,
-      "trim_start": 0,
-      "trim_end": null,
-      "notes": ""
-    }
-  ]
-}
-```
-
-### 4.2 keyframes.json
-
-```json
-{
-  "episode": "ep001",
-  "total_keyframes": 60,
-  "strategy": "All frames multi-reference",
-  "keyframes": [
-    {
-      "keyframe_id": "S01-KF1",
-      "shot_id": "S01",
-      "frame_index": 0,
-      "type": "t2i",
-      "timestamp_s": 0.0,
-      "prompt": "...",
-      "camera_state": "...",
-      "ref_image": "/path/to/location/ref.png",
-      "duration_until_next_s": 1.33,
-      "assets": {
-        "location_ref": "lingzi_capital_data_core",
-        "location_asset": { ... },
-        "character_refs": [],
-        "character_assets": {},
-        "prop_refs": [],
-        "prop_assets": {}
-      }
-    }
-  ]
-}
-```
-
-### 4.3 characters.json
-
-```json
-{
-  "metadata": {
-    "episode": "ep001",
-    "generated_by": "vstudio",
-    "version": "1.0"
-  },
-  "characters": {
-    "young_fuxi": {
-      "zh_name": "年轻伏羲",
-      "en_name": "Young Fuxi",
-      "gender": "male",
-      "age": "16岁",
-      "appearance": "棱角分明的面庞，长黑发半束...",
-      "costume": "深褐色兽皮背心，赤足",
-      "personality": "好奇心强，倔强",
-      "visual_prompts": ["angular face", "long black hair"],
-      "color_palette": ["dark brown", "black"]
-    }
-  }
-}
-```
+导出格式由 VStudio 自行定义，按需扩展。
 
 ---
 

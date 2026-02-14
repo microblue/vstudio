@@ -146,7 +146,7 @@ serve(async (req) => {
 
 ### 2.6 提示词模板
 
-从 fuxi style_bible 继承的模块化结构：
+模块化提示词结构：
 
 ```
 [STYLE PREFIX]       ← 项目风格设置
