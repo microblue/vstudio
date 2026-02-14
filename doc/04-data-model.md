@@ -1,5 +1,24 @@
 # VStudio — 数据模型设计
 
+> **设计原则：结构化字段 + JSONB 灵活属性**
+> - 需要查询、索引、JOIN、排序的字段 → 结构化列
+> - 扩展属性、AI 参数、UI 配置 → JSONB 列
+> - 每张表至少一个 `meta JSONB DEFAULT '{}'` 字段用于未来扩展
+
+## 0. 通用约定
+
+| 约定 | 说明 |
+|------|------|
+| 主键 | `id UUID DEFAULT gen_random_uuid()` |
+| 时间 | `created_at / updated_at TIMESTAMPTZ DEFAULT now()` |
+| 软删除 | 不使用，直接 `ON DELETE CASCADE` |
+| 用户归属 | `user_id UUID REFERENCES auth.users(id)` 在顶层表 (projects) |
+| RLS | 所有表启用，策略基于 `auth.uid() = user_id`（通过 project 链路） |
+| JSONB 索引 | 对频繁查询的 JSONB 路径建 GIN 或 btree 表达式索引 |
+| 命名 | 表名复数小写，字段 snake_case |
+
+---
+
 ## 1. ER 关系图
 
 ```
@@ -36,25 +55,33 @@ Dialogue 1──1 AudioClip (TTS生成的音频)
 ```sql
 CREATE TABLE projects (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name          VARCHAR(255) NOT NULL,
   description   TEXT,
-  cover_image   VARCHAR(500),       -- 封面图URL
-  status        VARCHAR(50) DEFAULT 'active',  -- active, archived
-  settings      JSONB DEFAULT '{}', -- 项目级设置
-  created_at    TIMESTAMP DEFAULT NOW(),
-  updated_at    TIMESTAMP DEFAULT NOW()
+  cover_image   TEXT,                    -- Storage URL
+  status        VARCHAR(20) DEFAULT 'active',  -- active | archived
+  settings      JSONB DEFAULT '{}',
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
 );
+
+-- RLS
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY projects_owner ON projects
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 ```
 
-**settings JSON 示例：**
-```json
+**settings JSONB 示例：**
+```jsonc
 {
   "resolution": "1920x1080",
   "fps": 24,
   "aspect_ratio": "16:9",
   "default_t2i_candidates": 3,
   "negative_prompt": "anatomy error, face distortion...",
-  "style_prefix": "cinematic film still, photorealistic..."
+  "style_prefix": "cinematic film still, photorealistic...",
+  "style_bible": { /* 风格圣经内容 */ }
 }
 ```
 
@@ -386,10 +413,129 @@ VStudio 数据库是 source of truth。支持通过 Edge Function 导出标准 J
 CREATE INDEX idx_episodes_project ON episodes(project_id);
 CREATE INDEX idx_shots_episode ON shots(episode_id);
 CREATE INDEX idx_shots_episode_order ON shots(episode_id, sort_order);
+CREATE INDEX idx_shots_location ON shots(location_ref);
+CREATE INDEX idx_shots_characters ON shots USING GIN(character_refs);
 CREATE INDEX idx_keyframes_shot ON keyframes(shot_id);
 CREATE INDEX idx_keyframe_candidates_kf ON keyframe_candidates(keyframe_id);
 CREATE INDEX idx_dialogues_shot ON dialogues(shot_id);
 CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
 CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX idx_tasks_external ON tasks(external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX idx_audio_clips_episode ON audio_clips(episode_id);
+-- JSONB 路径索引
+CREATE INDEX idx_shots_prompts ON shots USING GIN(prompts jsonb_path_ops);
+```
+
+---
+
+## 6. screenplay_drafts — AI 剧本草稿
+
+```sql
+CREATE TABLE screenplay_drafts (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id          UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  version             INTEGER NOT NULL DEFAULT 1,
+  status              VARCHAR(20) DEFAULT 'generating',
+  -- generating | completed | failed | adopted
+  outline             TEXT NOT NULL,
+  genre               VARCHAR(50),
+  target_duration     VARCHAR(20),
+  language            VARCHAR(20) DEFAULT 'zh',
+  model               VARCHAR(100) NOT NULL,
+  generated_script    TEXT,
+  input_params        JSONB DEFAULT '{}',
+  generation_info     JSONB DEFAULT '{}',
+  created_at          TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_screenplay_drafts_project ON screenplay_drafts(project_id);
+```
+
+**input_params 示例：**
+```jsonc
+{
+  "extra_requirements": "主角25岁，性格冷静...",
+  "model_config": { "endpoint": "https://...", "api_key_ref": "..." },
+  "system_prompt_override": null
+}
+```
+
+**generation_info 示例：**
+```jsonc
+{
+  "token_usage": { "input": 800, "output": 3200 },
+  "latency_ms": 12500,
+  "model_version": "claude-opus-4-20260213"
+}
+```
+
+---
+
+## 7. RLS 策略模式
+
+所有表通过 project 链路归属到用户：
+
+```sql
+-- 子表 RLS 模板（以 episodes 为例）
+CREATE POLICY episodes_owner ON episodes
+  USING (
+    project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())
+  );
+
+-- 更深层子表（以 shots 为例）
+CREATE POLICY shots_owner ON shots
+  USING (
+    episode_id IN (
+      SELECT e.id FROM episodes e
+      JOIN projects p ON e.project_id = p.id
+      WHERE p.user_id = auth.uid()
+    )
+  );
+```
+
+> **性能提示：** 深层嵌套 RLS 可能较慢。可在子表冗余 `project_id` 或使用 `security definer` 函数优化。
+
+---
+
+## 8. JSONB 索引最佳实践
+
+```sql
+-- GIN 索引：支持 @>, ?, ?| 等操作符
+CREATE INDEX idx_shots_prompts ON shots USING GIN(prompts jsonb_path_ops);
+
+-- 表达式索引：频繁查询特定路径
+CREATE INDEX idx_tasks_type_from_params ON tasks((params->>'shot_id'));
+
+-- 部分索引：只索引特定状态
+CREATE INDEX idx_tasks_running ON tasks(status) WHERE status = 'running';
+```
+
+---
+
+## 9. Supabase Storage 路径约定
+
+```
+projects/{project_id}/
+├── assets/
+│   ├── characters/{asset_id}/ref_*.png
+│   ├── locations/{asset_id}/ref_*.png
+│   └── props/{asset_id}/ref_*.png
+└── episodes/{episode_number}/
+    ├── keyframes/S01_KF1_*.png
+    ├── videos/S01_video.mp4
+    ├── audio/S01_dialogue.wav
+    ├── subtitles/
+    └── output/final.mp4
+```
+
+---
+
+## 10. 迁移文件命名
+
+```
+supabase/migrations/
+├── 20260214_001_create_projects.sql
+├── 20260214_002_create_episodes.sql
+├── 20260214_003_create_scripts.sql
+├── ...
 ```
