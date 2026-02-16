@@ -1,0 +1,20 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".svelte-kit/output/static",
+  "framework": "sveltekit",
+  "functions": {
+    "src/routes/api/**/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ],
+  "env": {
+    "PUBLIC_SUPABASE_URL": "@public_supabase_url",
+    "PUBLIC_SUPABASE_ANON_KEY": "@public_supabase_anon_key"
+  }
+}

@@ -1,8 +1,102 @@
-node_modules/
+node_modules
+.svelte-kit
+build
 .env
 .env.*
-*.log
+!.env.example
+!.env.production
 .DS_Store
-dist/
-build/
-.cache/
+dist
+
+# Build outputs
+/.vercel
+/.netlify
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Chrome/Browser data
+chrome-*/
+.com.google.Chrome.*
+gdm3-config-err*
+qipc_*
+
+# Audio/Video files
+*.mp3
+*.wav
+*.mp4
+*.avi
+*.ogg
+
+# 3D Models and assets
+*.glb
+*.fbx
+
+# Images (except documentation)
+*.png
+*.jpg
+*.jpeg
+*.gif
+!doc/**/*.png
+!doc/**/*.jpg
+!static/**/*.png
+!static/**/*.jpg
+
+# Python files
+*.py
+__pycache__/
+*.pyc
+
+# Temporary directories
+pytest-of-*/
+scoped_*/
+jiti/
+openclaw*/
+claude*/
+kenney*/
+fbx*/
+google-*/
+update-check/
+node-compile-cache/
+
+# System files
+Thumbs.db
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+
+# Wrangler
+.wrangler/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PDF files
+*.pdf
+
+# Text files (logs/data)  
+*.txt
+!README.txt
+
+# Archive files
+*.zip
+*.tar.gz
+*.deb
+
+# Other binaries
+*.bin
+*.exe
+uv-*
+FBX2glTF*
