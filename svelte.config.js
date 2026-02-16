@@ -1,12 +1,15 @@
-import adapter from '@sveltejs/adapter-vercel';
+import adapter from '@sveltejs/adapter-cloudflare';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
-		// Use Vercel adapter
+		// Use Cloudflare Pages adapter
 		adapter: adapter({
-			// Vercel 配置选项
-			runtime: 'nodejs20.x'
+			// Cloudflare 配置选项
+			routes: {
+				include: ['/*'],
+				exclude: ['<all>']
+			}
 		})
 	}
 };

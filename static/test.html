@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VStudio 测试页面</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 40px; background: #f8fafc; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .success { color: #059669; font-weight: bold; }
+        .status { background: #ecfdf5; border: 1px solid #a7f3d0; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        h1 { color: #1f2937; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
+        .card { background: #f9fafb; padding: 20px; border-radius: 8px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 VStudio - 测试页面</h1>
+        
+        <div class="status">
+            <div class="success">✅ 静态页面部署成功！</div>
+            <p>如果您能看到此页面，说明 Cloudflare Pages 部署正常工作。</p>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>📊 部署信息</h3>
+                <p>环境: Cloudflare Pages<br>状态: 运行中<br>时间: <span id="time"></span></p>
+            </div>
+            
+            <div class="card">
+                <h3>🔧 技术栈</h3>
+                <p>SvelteKit<br>Cloudflare Pages<br>Supabase</p>
+            </div>
+            
+            <div class="card">
+                <h3>🚀 功能</h3>
+                <p>AI 剧本生成<br>视觉创作<br>音频合成</p>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <button onclick="testSvelteApp()" style="background: #7c3aed; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px;">
+                🧪 测试 SvelteKit 应用
+            </button>
+        </div>
+
+        <div id="test-result" style="margin-top: 20px; padding: 15px; border-radius: 5px; display: none;"></div>
+    </div>
+
+    <script>
+        // 显示当前时间
+        document.getElementById('time').textContent = new Date().toLocaleString('zh-CN');
+
+        // 测试 SvelteKit 应用
+        function testSvelteApp() {
+            const resultDiv = document.getElementById('test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.style.background = '#fef3c7';
+            resultDiv.style.border = '1px solid #f59e0b';
+            resultDiv.innerHTML = '<p>正在测试 SvelteKit 应用...</p>';
+            
+            // 尝试访问 SvelteKit 应用
+            fetch('/')
+                .then(response => response.text())
+                .then(html => {
+                    if (html.includes('VStudio')) {
+                        resultDiv.style.background = '#ecfdf5';
+                        resultDiv.style.border = '1px solid #10b981';
+                        resultDiv.innerHTML = '<p class="success">✅ SvelteKit 应用响应正常！</p><p>主应用可能需要更多时间初始化。</p>';
+                    } else {
+                        throw new Error('应用内容异常');
+                    }
+                })
+                .catch(error => {
+                    resultDiv.style.background = '#fef2f2';
+                    resultDiv.style.border = '1px solid #ef4444';
+                    resultDiv.innerHTML = '<p>❌ SvelteKit 应用测试失败: ' + error.message + '</p>';
+                });
+        }
+
+        // 添加简单的动画效果
+        document.querySelectorAll('.card').forEach((card, index) => {
+            setTimeout(() => {
+                card.style.animation = 'fadeIn 0.5s ease-out';
+            }, index * 100);
+        });
+    </script>
+    
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</body>
+</html>
